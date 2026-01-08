@@ -35,8 +35,9 @@ if ($userType == 'user') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submitComplaint'])) {
-    $companyID    = $_POST['companyID']      ?? null;
-    $reasonID     = $_POST['reasonID']       ?? null;
+    
+    $companyID    = !empty($_POST['companyID']) ? (int)$_POST['companyID'] : null;
+    $reasonID     = !empty($_POST['reasonID']) ? (int)$_POST['reasonID'] : null;
     $description  = $_POST['description']    ?? '';
 
     
@@ -67,18 +68,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submitComplaint'])) {
         }
     } else {
         
-        $userID = null;
-        $customerID = $_SESSION['customerID'];
+        $userID = 0;
+        
+        if (isset($_SESSION['customerID'])) {
+            $customerID = $_SESSION['customerID'];
+        } else {
+            
+            $_SESSION['error'] = "Customer session not found. Please log in again.";
+            header('Location: LoginPage.php');
+            exit;
+        }
     }
 
     
     $createdTime = date('Y-m-d H:i:s');
+    
+    
+    if (empty($companyID) || empty($reasonID) || empty($customerID)) {
+        $_SESSION['error'] = "Missing required fields. Please ensure Company and Reason are selected.";
+        header('Location: ComplaintCreation.php');
+        exit;
+    }
+    
     $sql = "INSERT INTO complaints 
             (userID, companyID, reasonID, description, status, created, closed, customerID)
             VALUES 
             (:userID, :companyID, :reasonID, :description, :status, :created, :closed, :customerID)
     ";
     $stmt = $db->prepare($sql);
+    
+    
+    if (!$stmt) {
+        $_SESSION['error'] = "Database error: Failed to prepare statement.";
+        header('Location: ComplaintCreation.php');
+        exit;
+    }
+    
+    
     $stmt->bindValue(':userID',      $userID,       SQLITE3_INTEGER);
     $stmt->bindValue(':companyID',    $companyID,     SQLITE3_INTEGER);
     $stmt->bindValue(':reasonID',    $reasonID,     SQLITE3_INTEGER);
@@ -87,7 +113,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submitComplaint'])) {
     $stmt->bindValue(':created',     $createdTime,  SQLITE3_TEXT);
     $stmt->bindValue(':closed',      null,          SQLITE3_NULL);
     $stmt->bindValue(':customerID',  $customerID,   SQLITE3_INTEGER);
-    $stmt->execute();
+    
+    
+    $result = $stmt->execute();
+    
+    if (!$result) {
+        
+        $errorMsg = $db->lastErrorMsg();
+        $_SESSION['error'] = "Failed to create complaint: " . $errorMsg;
+        header('Location: ComplaintCreation.php');
+        exit;
+    }
 
     $newComplaintID = $db->lastInsertRowID();
     $_SESSION['complaintID'] = $newComplaintID;
